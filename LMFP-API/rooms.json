@@ -1,0 +1,36 @@
+{
+    "rooms": [
+        {
+            "remote_port": 25565,
+            "node_id": 3,
+            "room_name": "Lyt_IT无规则服务器",
+            "game_version": "1.21.11",
+            "player_count": 1,
+            "max_players": 20,
+            "description": "Lyt_IT无规则服务器",
+            "is_public": true,
+            "create_time": 1771436811,
+            "last_update": 1771465455,
+            "server_addr": "teft.cn",
+            "host_player": "Lyt_IT",
+            "full_room_code": "25565_3"
+        },
+        {
+            "remote_port": 25565,
+            "node_id": 99,
+            "room_name": "灵溯源点服务器",
+            "game_version": "1.21",
+            "player_count": 1,
+            "max_players": 20,
+            "description": "灵溯源点服务器",
+            "is_public": true,
+            "create_time": 1771301973,
+            "last_update": 1771465455,
+            "server_addr": "101.132.148.117",
+            "host_player": "MatrixLight",
+            "full_room_code": "25565_99"
+        }
+    ],
+    "created_at": 1763290507,
+    "updated_at": 1771465455
+}
