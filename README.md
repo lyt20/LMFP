@@ -3,7 +3,7 @@
 
 \-
 
-另外 我还有一个临时不开源的项目：Liora.lyit.asia 可以来看看哦awa
+另外 我还有一个临时不开源的项目：https://liora.lyit.asia/ 可以来看看哦awa
 
 \-
 
