@@ -1,4 +1,5 @@
 # LMFP
+
 是一款MC联机软件 自动获取本地端口，自动内网穿透，自动发布到联机大厅 一气呵成
 
 \-
@@ -15,9 +16,9 @@
 
 
 
-客户端配置（LMFP-Beta-4.0文件夹）配置比较简单
+客户端配置（LMFP-Beta-12.5文件夹）配置比较简单
 
-改下main.py中的api变量就行
+改下main.py中的apis变量就行
 
 \-
 
@@ -35,7 +36,9 @@
 
 6.修改/public\_chat/api目录的config.php、chat\_api.php内的邮箱设置
 
-7.修改/frplistlytapiit.txt内容 填写你的Frps服务器信息
+7.修改/frplist58.txt内容 填写你的Frps服务器信息
+
+8.在/frplist581.txt填入和/frplist58.txt相同的内容
 
 \-
 
@@ -47,7 +50,7 @@ admin1.php能发布新软件公告 检测服务器状态
 
 \-
 
-发布软件新版本更新方法：上传新版本更新包（lmfp.zip）到服务器网站/dl目录，修改服务器网站/v.txt内容为新的软件版本
+发布软件新版本更新方法：上传新版本更新包（lmfp.zip）到服务器网站/dl目录，修改服务器网站/v.txt内容为新的软件版本，记得在服务器新建文件 "hs版本号.txt" 内写入main.exe文件的sha256，然后修改sha.txt为更新包（zip）的sha256
 
 （更新包内部需要包含 main.exe、v.txt  其中v.txt内容应该为新版本号）
 
