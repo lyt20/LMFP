@@ -1,6 +1,6 @@
 <?php
 // 配置
-$token = '5290210220120925';
+$token = 'xxxxxxxxxxxxxxxxxxxx';
 $status_file = 'st.txt';
 $counter_file = 'ggbb.txt';
 $announcement_prefix = 'gg';
