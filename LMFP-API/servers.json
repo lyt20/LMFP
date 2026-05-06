@@ -1,0 +1,31 @@
+{
+  "success": true,
+  "message": "获取房间列表成功",
+  "timestamp": 1777473476,
+  "server_time": "2026-04-29 22:37:56",
+  "data": {
+    "rooms": [
+      {
+        "remote_port": 56786,
+        "node_id": 99,
+        "room_name": "[正版服] 万象世界VientianeWorld",
+        "is_public": true,
+        "create_time": 1777473287,
+        "last_update": 1777473448,
+        "server_addr": "frp-rug.com",
+        "host_player": "服主ID",
+        "full_room_code": "56786_99",
+        "download_url": "https://cdn-alt.modrinth.com/data/QHDBlGog/versions/e73vgmBX/VientianeWorld_V5.1.mrpack",
+        "https_url": "https://网站审核中/"
+      }
+    ],
+    "stats": {
+      "total_rooms": 1,
+      "public_rooms": 1,
+      "private_rooms": 0,
+      "cleaned_rooms": 0,
+      "server_time": 1777473476,
+      "server_time_str": "2026-04-29 22:37:56"
+    }
+  }
+}
