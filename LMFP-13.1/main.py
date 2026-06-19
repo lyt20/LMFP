@@ -30,6 +30,8 @@ import winsound
 from xml.etree import ElementTree as ET
 import tempfile
 import tkinter.font as tkFont
+# 调试模式变量：若=1，则每次测试端口占用间隔1分钟且写入日志
+devmode = 0
 
 # 导入UDP广播模块
 from send import MulticastServer
@@ -55,7 +57,7 @@ MAX_FAILURE_COUNT = 3  # 连续失败 3 次后报错
 # API 域名配置
 apis = "lytapi.asia"
 # LMFP 版本号配置
-lmfpvers = "12.5.0"
+lmfpvers = "13.1.0"
 
 def calculate_file_sha256(file_path):
     """计算文件的SHA-256哈希值"""
@@ -1383,104 +1385,31 @@ def perform_update_pyside():
                 """下载更新器 - 完全仿照Tkinter逻辑"""
                 max_retries = 3
                 
-                # 首先从upxz.txt获取A链接
-                a_link_url = f"https://{apis}/dl/upxz.txt"
-                self.log_signal.emit(f"正在从 {a_link_url} 获取A链接...")
+                # 首先从uplj.txt获取真正的下载直链
+                a_link_url = f"https://{apis}/dl/uplj.txt"
+                self.log_signal.emit(f"正在从 {a_link_url} 获取更新器下载链接...")
                 
-                # 获取A链接 - 带重试机制
-                a_link = None
+                # 获取直链 - 带重试机制
+                download_url = None
                 for attempt in range(max_retries + 1):
                     try:
-                        self.log_signal.emit(f"获取A链接... (尝试 {attempt + 1}/{max_retries + 1})")
+                        self.log_signal.emit(f"获取下载链接... (尝试 {attempt + 1}/{max_retries + 1})")
                         req = Request(a_link_url, headers={'User-Agent': f'LMFP/{lmfpvers}'})
                         with urlopen(req, timeout=None) as response:
-                            a_link = response.read().decode('utf-8').strip()
-                        self.log_signal.emit(f"获取到A链接: {a_link}")
+                            download_url = response.read().decode('utf-8').strip()
+                        self.log_signal.emit(f"获取到真实的下载链接: {download_url}")
                         break  # 成功获取，跳出循环
                     except Exception as e:
-                        self.log_signal.emit(f"获取A链接失败 (尝试 {attempt + 1}/{max_retries + 1}): {str(e)}")
+                        self.log_signal.emit(f"获取下载链接失败 (尝试 {attempt + 1}/{max_retries + 1}): {str(e)}")
                         if attempt >= max_retries:
                             # 所有重试都失败，使用默认链接
-                            self.log_signal.emit("获取 A 链接的所有重试都失败，使用默认下载链接")
+                            self.log_signal.emit("获取下载链接的所有重试都失败，使用默认下载链接")
                             download_url = f"https://{apis}/dl/up.exe"
-                            a_link = None  # 标记为获取失败
                             break
                         time.sleep(2)  # 等待2秒后重试
                 
-                # 如果成功获取了A链接，则使用API获取真实下载链接
-                if a_link:
-                    # 使用A链接和密码获取真实下载链接 - 带重试机制
-                    api_url = f"https://{apis}/lz/?url={a_link}&pwd=1234"
-                    self.log_signal.emit(f"正在调用API获取真实下载链接: {api_url}")
-                    
-                    for attempt in range(max_retries + 1):
-                        try:
-                            self.log_signal.emit(f"调用API... (尝试 {attempt + 1}/{max_retries + 1})")
-                            req = Request(api_url, headers={'User-Agent': f'LMFP/{lmfpvers}'})
-                            with urlopen(req, timeout=None) as response:
-                                api_response = response.read().decode('utf-8')
-                            
-                            # 解析API返回的JSON数据
-                            try:
-                                api_data = json.loads(api_response)
-                            except json.JSONDecodeError as e:
-                                self.log_signal.emit(f"解析 API 响应 JSON 失败：{str(e)}")
-                                # 如果解析失败，使用默认链接
-                                download_url = f"https://{apis}/dl/up.exe"
-                                self.log_signal.emit(f"使用默认下载链接: {download_url}")
-                                break
-                            
-                            if api_data.get('code') == 200:
-                                download_url = api_data.get('downUrl')
-                                self.log_signal.emit(f"获取到真实下载地址: {download_url}")
-                                
-                                # 检查下载链接长度，如果超过300字符则重新获取
-                                max_length_retries = 10
-                                length_retry_count = 0
-                                while len(download_url) > 300 and length_retry_count < max_length_retries:
-                                    length_retry_count += 1
-                                    self.log_signal.emit(f"下载链接长度超过300字符 ({len(download_url)} 字符)，正在进行第{length_retry_count}次重新获取...")
-                                    
-                                    # 重新调用API获取新的下载链接
-                                    try:
-                                        req = Request(api_url, headers={'User-Agent': f'LMFP/{lmfpvers}'})
-                                        with urlopen(req, timeout=None) as response:
-                                            api_response = response.read().decode('utf-8')
-                                        api_data = json.loads(api_response)
-                                        if api_data.get('code') == 200:
-                                            download_url = api_data.get('downUrl')
-                                            self.log_signal.emit(f"重新获取到下载地址: {download_url} (长度: {len(download_url)} 字符)")
-                                        else:
-                                            self.log_signal.emit(f"重新获取API返回错误: {api_data.get('msg', '未知错误')}")
-                                            break
-                                    except Exception as e:
-                                        self.log_signal.emit(f"重新获取下载链接失败: {str(e)}")
-                                        break
-                                    
-                                    time.sleep(1)  # 等待1秒后重试
-                                
-                                if length_retry_count >= max_length_retries:
-                                    self.log_signal.emit(f"已达到最大重试次数({max_length_retries})，使用当前下载链接")
-                                
-                                break  # 成功获取，跳出循环
-                            else:
-                                self.log_signal.emit(f"API 返回错误：{api_data.get('msg', '未知错误')}")
-                                # 如果 API 调用失败，使用默认链接
-                                download_url = f"https://{apis}/dl/up.exe"
-                                self.log_signal.emit(f"使用默认下载链接: {download_url}")
-                                break
-                        except Exception as e:
-                            self.log_signal.emit(f"API调用失败 (尝试 {attempt + 1}/{max_retries + 1}): {str(e)}")
-                            if attempt >= max_retries:
-                                # 所有重试都失败，使用默认链接
-                                self.log_signal.emit("API 调用的所有重试都失败，使用默认下载链接")
-                                download_url = f"https://{apis}/dl/up.exe"
-                            else:
-                                time.sleep(2)  # 等待2秒后重试
-                else:
-                    # 如果未能获取 A 链接，则使用默认下载链接
+                if not download_url:
                     download_url = f"https://{apis}/dl/up.exe"
-                    self.log_signal.emit(f"使用默认下载链接: {download_url}")
                 
                 # 下载最新的up.exe - 带重试机制
                 self.log_signal.emit(f"正在从 {download_url} 下载最新的up.exe...")
@@ -1822,105 +1751,32 @@ def perform_update():
     
     def download_and_update():
         try:
-            # 首先从upxz.txt获取A链接
-            a_link_url = f"https://{apis}/dl/upxz.txt"
-            message_queue.put({'type': 'log', 'text': f"正在从 {a_link_url} 获取A链接..."})
+            # 首先从uplj.txt获取真正的下载直链
+            a_link_url = f"https://{apis}/dl/uplj.txt"
+            message_queue.put({'type': 'log', 'text': f"正在从 {a_link_url} 获取更新器下载链接..."})
                         
-            # 获取A链接 - 带重试机制
-            a_link = None
+            # 获取直链 - 带重试机制
+            download_url = None
             max_retries = 3
             for attempt in range(max_retries + 1):
                 try:
-                    message_queue.put({'type': 'log', 'text': f"获取A链接... (尝试 {attempt + 1}/{max_retries + 1})"})
+                    message_queue.put({'type': 'log', 'text': f"获取下载链接... (尝试 {attempt + 1}/{max_retries + 1})"})
                     req = Request(a_link_url, headers={'User-Agent': f'LMFP/{lmfpvers}'})
                     with urlopen(req, timeout=None) as response:
-                        a_link = response.read().decode('utf-8').strip()
-                    message_queue.put({'type': 'log', 'text': f"获取到A链接: {a_link}"})
+                        download_url = response.read().decode('utf-8').strip()
+                    message_queue.put({'type': 'log', 'text': f"获取到真实的下载链接: {download_url}"})
                     break  # 成功获取，跳出循环
                 except Exception as e:
-                    message_queue.put({'type': 'log', 'text': f"获取A链接失败 (尝试 {attempt + 1}/{max_retries + 1}): {str(e)}"})
+                    message_queue.put({'type': 'log', 'text': f"获取下载链接失败 (尝试 {attempt + 1}/{max_retries + 1}): {str(e)}"})
                     if attempt >= max_retries:
                         # 所有重试都失败，使用默认链接
-                        message_queue.put({'type': 'log', 'text': "获取 A 链接的所有重试都失败，使用默认下载链接"})
+                        message_queue.put({'type': 'log', 'text': "获取下载链接的所有重试都失败，使用默认下载链接"})
                         download_url = f"https://{apis}/dl/up.exe"
-                        a_link = None  # 标记为获取失败
                         break
                     time.sleep(2)  # 等待2秒后重试
-                        
-            # 如果成功获取了A链接，则使用API获取真实下载链接
-            if a_link:
-                # 使用A链接和密码获取真实下载链接 - 带重试机制
-                api_url = f"https://{apis}/lz/?url={a_link}&pwd=1234"
-                message_queue.put({'type': 'log', 'text': f"正在调用API获取真实下载链接: {api_url}"})
-                            
-                for attempt in range(max_retries + 1):
-                    try:
-                        message_queue.put({'type': 'log', 'text': f"调用API... (尝试 {attempt + 1}/{max_retries + 1})"})
-                        req = Request(api_url, headers={'User-Agent': f'LMFP/{lmfpvers}'})
-                        with urlopen(req, timeout=None) as response:
-                            api_response = response.read().decode('utf-8')
-                                        
-                        # 解析API返回的JSON数据
-                        try:
-                            api_data = json.loads(api_response)
-                        except json.JSONDecodeError as e:
-                            message_queue.put({'type': 'log', 'text': f"解析 API 响应 JSON 失败：{str(e)}"})
-                            # 如果解析失败，使用默认链接
-                            download_url = f"https://{apis}/dl/up.exe"
-                            message_queue.put({'type': 'log', 'text': f"使用默认下载链接: {download_url}"})
-                            break
-                                    
-                        if api_data.get('code') == 200:
-                            download_url = api_data.get('downUrl')
-                            message_queue.put({'type': 'log', 'text': f"获取到真实下载地址: {download_url}"})
-                            
-                            # 检查下载链接长度，如果超过300字符则重新获取
-                            max_length_retries = 10
-                            length_retry_count = 0
-                            while len(download_url) > 300 and length_retry_count < max_length_retries:
-                                length_retry_count += 1
-                                message_queue.put({'type': 'log', 'text': f"下载链接长度超过300字符 ({len(download_url)} 字符)，正在进行第{length_retry_count}次重新获取..."})
-                                
-                                # 重新调用API获取新的下载链接
-                                try:
-                                    req = Request(api_url, headers={'User-Agent': f'LMFP/{lmfpvers}'})
-                                    with urlopen(req, timeout=None) as response:
-                                        api_response = response.read().decode('utf-8')
-                                    api_data = json.loads(api_response)
-                                    if api_data.get('code') == 200:
-                                        download_url = api_data.get('downUrl')
-                                        message_queue.put({'type': 'log', 'text': f"重新获取到下载地址: {download_url} (长度: {len(download_url)} 字符)"})
-                                    else:
-                                        message_queue.put({'type': 'log', 'text': f"重新获取API返回错误: {api_data.get('msg', '未知错误')}"})
-                                        break
-                                except Exception as e:
-                                    message_queue.put({'type': 'log', 'text': f"重新获取下载链接失败: {str(e)}"})
-                                    break
-                                
-                                time.sleep(1)  # 等待1秒后重试
-                            
-                            if length_retry_count >= max_length_retries:
-                                message_queue.put({'type': 'log', 'text': f"已达到最大重试次数({max_length_retries})，使用当前下载链接"})
-                            
-                            break  # 成功获取，跳出循环
-                        else:
-                            message_queue.put({'type': 'log', 'text': f"API 返回错误：{api_data.get('msg', '未知错误')}"})
-                            # 如果 API 调用失败，使用默认链接
-                            download_url = f"https://{apis}/dl/up.exe"
-                            message_queue.put({'type': 'log', 'text': f"使用默认下载链接: {download_url}"})
-                            break
-                    except Exception as e:
-                        message_queue.put({'type': 'log', 'text': f"API调用失败 (尝试 {attempt + 1}/{max_retries + 1}): {str(e)}"})
-                        if attempt >= max_retries:
-                            # 所有重试都失败，使用默认链接
-                            message_queue.put({'type': 'log', 'text': "API 调用的所有重试都失败，使用默认下载链接"})
-                            download_url = f"https://{apis}/dl/up.exe"
-                        else:
-                            time.sleep(2)  # 等待2秒后重试
-            else:
-                # 如果未能获取 A 链接，则使用默认下载链接
+            
+            if not download_url:
                 download_url = f"https://{apis}/dl/up.exe"
-                message_queue.put({'type': 'log', 'text': f"使用默认下载链接: {download_url}"})
                         
             # 下载最新的up.exe - 带重试机制
             message_queue.put({'type': 'log', 'text': f"正在从 {download_url} 下载最新的up.exe..."})
@@ -2233,7 +2089,20 @@ def check_announcements():
             
             # 获取所有未读的公告
             announcements = []
-            versions = list(range(local_version + 1, cloud_version + 1))
+            
+            # 从服务器获取实际存在的公告列表
+            try:
+                list_url = f"https://{apis}/gg_list.php"
+                req = Request(list_url, headers={'User-Agent': f'LMFP/{lmfpvers}'})
+                with urlopen(req, timeout=10) as response:
+                    list_data = json.loads(response.read().decode('utf-8'))
+                    valid_versions = list_data.get('valid_versions', [])
+                    # 过滤出未读的且真实存在的公告版本
+                    versions = [v for v in valid_versions if local_version < v <= cloud_version]
+                    print(f"服务器真实存在的未读公告列表: {versions}")
+            except Exception as e:
+                print(f"获取真实公告列表失败: {e}，将尝试所有版本")
+                versions = list(range(local_version + 1, cloud_version + 1))
             
             from concurrent.futures import ThreadPoolExecutor, as_completed
             
@@ -5423,7 +5292,7 @@ class LMFP_MinecraftTool:
             
         self.ipv6 = ""
         self.mc_port = None
-        self.mc_ports = [25565, 25566, 25567, 19132, 19133]
+        self.mc_ports = [255651]
         self.frp_nodes = []
         self.best_node = None
         
@@ -5736,27 +5605,39 @@ class LMFP_MinecraftTool:
     
     def stop_frp_services(self):
         """停止FRP服务"""
+        self.trial_monitor_running = False
         try:
             # 停止FRPC客户端
-            if self.frpc_process and self.frpc_process.poll() is None:
-                self.frpc_process.terminate()
-                self.frpc_process.wait(timeout=3)
+            frpc = getattr(self, 'frpc_process', None)
+            if frpc and frpc.poll() is None:
+                frpc.terminate()
+                frpc.wait(timeout=3)
             self.frpc_process = None
             
             # 停止FRPS服务端
-            if self.frps_process and self.frps_process.poll() is None:
-                self.frps_process.terminate()
-                self.frps_process.wait(timeout=3)
+            frps = getattr(self, 'frps_process', None)
+            if frps and frps.poll() is None:
+                frps.terminate()
+                frps.wait(timeout=3)
             self.frps_process = None
+            
+            # 停止综合FRP进程
+            frp = getattr(self, 'frp_process', None)
+            if frp and frp.poll() is None:
+                frp.terminate()
+                frp.wait(timeout=3)
+            self.frp_process = None
             
         except Exception as e:
             print(f"停止FRP服务时出错: {e}")
             # 强制杀死进程
             try:
-                if self.frpc_process:
-                    self.frpc_process.kill()
-                if self.frps_process:
-                    self.frps_process.kill()
+                frpc = getattr(self, 'frpc_process', None)
+                if frpc: frpc.kill()
+                frps = getattr(self, 'frps_process', None)
+                if frps: frps.kill()
+                frp = getattr(self, 'frp_process', None)
+                if frp: frp.kill()
             except:
                 pass
 
@@ -7886,27 +7767,22 @@ QQ: 2232908600
         
         candidate_ports = []
         
-        if not self.is_port_occupied(25565):
-            self.log("25565端口未被占用，开始检测Java进程监听的端口...")
-            java_ports = self.get_java_process_ports()
+        java_ports = self.get_java_process_ports()
+        
+        if java_ports:
+            self.log(f"发现 {len(java_ports)} 个Java相关进程监听的端口: {java_ports}")
+            for port in java_ports:
+                if port in self.mc_ports:
+                    candidate_ports.append(port)
             
-            if java_ports:
-                self.log(f"发现 {len(java_ports)} 个Java相关进程监听的端口: {java_ports}")
-                for port in java_ports:
-                    if port in self.mc_ports:
-                        candidate_ports.append(port)
-                
-                if not candidate_ports:
-                    candidate_ports = java_ports
-                    self.log(f"使用所有Java进程端口作为候选: {candidate_ports}")
-                else:
-                    self.log(f"筛选出Minecraft常用端口: {candidate_ports}")
+            if not candidate_ports:
+                candidate_ports = java_ports
+                self.log(f"使用所有Java进程端口作为候选: {candidate_ports}")
             else:
-                self.log("未找到Java进程监听的端口")
-                return None
+                self.log(f"筛选出Minecraft常用端口: {candidate_ports}")
         else:
-            self.log("25565端口已被占用，添加到候选端口")
-            candidate_ports.append(25565)
+            self.log("未找到Java进程监听的端口")
+            return None
         
         self.log(f"开始验证 {len(candidate_ports)} 个候选端口: {candidate_ports}")
         valid_ports = []
@@ -7919,42 +7795,13 @@ QQ: 2232908600
                 self.log(f"✗ 端口 {port} 验证失败")
         
         if valid_ports:
-            if 25565 in valid_ports:
-                self.log(f"优先选择标准端口 25565")
-                return 25565
-            else:
-                selected_port = valid_ports[0]
-                self.log(f"选择端口 {selected_port} 作为Minecraft端口")
-                return selected_port
+            selected_port = valid_ports[0]
+            self.log(f"选择端口 {selected_port} 作为Minecraft端口")
+            return selected_port
         else:
             self.log("所有候选端口验证失败")
             return None    
-    def check_java_minecraft_server(self):
-        self.log("正在检查25565端口状态...")
-        
-        if self.is_port_mapping_active and self.mapped_port:
-            self.log(f"端口映射激活中，检查映射源端口 {self.mapped_port}")
-            if self.is_port_occupied_by_java_original(self.mapped_port):
-                self.log(f"✓ 映射源端口 {self.mapped_port} 被Java进程占用")
-                return True
-            else:
-                self.log(f"✗ 映射源端口 {self.mapped_port} 未被Java进程占用")
-                return False
-        
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.settimeout(1)
-                result = s.connect_ex(('127.0.0.1', 25565))
-                if result == 0:
-                    self.log("✓ 25565端口被占用，可能是Minecraft服务器")
-                    return True
-                else:
-                    self.log("25565端口未被占用")
-                    return False
-        except Exception:
-            self.log("25565端口检查失败")
-            return False
-    
+
     def manual_port_selection(self):
         self.log("\n无法确定Minecraft使用的端口，请手动确认：")
         self.log("1. 我已在Minecraft中开启局域网游戏")
@@ -8612,7 +8459,7 @@ remotePort = {remote_port}
                         }
             
             # 如果没找到，尝试常用端口
-            common_ports = [25565, 25575, 25577]
+            common_ports = [255651]
             for port in common_ports:
                 if self.is_minecraft_server_port('127.0.0.1', port):
                     status = self.get_server_status('127.0.0.1', port)
@@ -10555,7 +10402,25 @@ remotePort = {remote_port}
                 self.log(f"✓ 已选择节点: #{best_node['node_id']} - {best_node['name']}")
                 
                 # 生成房间信息 - 房间号格式：远程端口_FRP服务器号
-                remote_port = self.generate_random_remote_port()
+                self.log("正在检测可用端口...")
+                max_attempts = 50
+                attempts = 0
+                while attempts < max_attempts:
+                    remote_port = self.generate_random_remote_port()
+                    if devmode == 1:
+                        self.log(f"【开发者模式】正在等待0.5分钟以进行下一次端口占用测试: {remote_port}")
+                        time.sleep(30)
+                    # tcping一遍frps服务器对应端口，确保没有其他玩家的房间再继续
+                    is_in_use, _ = self.tcping(best_node['server_addr'], remote_port, timeout=1.5)
+                    if is_in_use:
+                        self.log(f"⚠ 检测到端口 {remote_port} 已被占用，重新生成...")
+                        attempts += 1
+                    else:
+                        # 端口不通，说明没有玩家房间在使用，可以使用此端口
+                        break
+                else:
+                    self.log("⚠ 达到最大尝试次数，仍未找到未被占用的端口，使用最后一个生成的端口")
+                
                 full_room_code = f"{remote_port}_{best_node['node_id']}"
                 proxy_name = f"mc_{remote_port}"
                 
@@ -10576,6 +10441,11 @@ remotePort = {remote_port}
                     self.log(f"完整房间号: {full_room_code}")
                     self.log(f"服务器地址: [已隐藏]")
                     self.log(f"本地Minecraft端口: {mc_port}")
+                    
+                    if best_node.get('is_trial_node', False):
+                        board_sn = getattr(self, 'board_sn', '未获取')
+                        self.log("启动试用时间后台监控心跳...")
+                        threading.Thread(target=self.monitor_trial_time_thread, args=(board_sn,), daemon=True).start()
                     
                     # 写入成功状态到 sta.json
                     try:
@@ -10659,6 +10529,104 @@ remotePort = {remote_port}
                 self.unlock_buttons()
 
         threading.Thread(target=create_room, daemon=True).start()
+
+    def monitor_trial_time_thread(self, board_sn):
+        """试用高速节点的心跳监测与扣除线程"""
+        self.trial_monitor_running = True
+        self.trial_monitor_notified = False
+        fail_count = 0
+        self.log("高速节点试用监测已启动 (每10秒扣除10秒试用时间)。")
+        
+        while self.trial_monitor_running and getattr(self, 'is_frp_running', False):
+            try:
+                url = f"https://lytapi.asia/vipd/api.php?action=heartbeat&id={board_sn}"
+                req = Request(url, headers={'User-Agent': f'LMFP/{lmfpvers}'})
+                with urlopen(req, timeout=3) as response:
+                    res_data = json.loads(response.read().decode('utf-8'))
+                    if res_data.get('success'):
+                        fail_count = 0  # 成功则重置失败计数
+                        remaining = res_data.get('remaining_seconds', 0)
+                        
+                        mins = remaining // 60
+                        secs = remaining % 60
+                        self.log(f"当前赞助用户专属节点剩余试用时间: {mins}分钟{secs}秒")
+                        
+                        # 剩余时间小于 10分钟(600秒)且未通知过
+                        if remaining < 600 and not self.trial_monitor_notified:
+                            self.trial_monitor_notified = True
+                            self.log("⚠ 试用节点剩余时间不足 10 分钟！")
+                            # 发送 Windows 桌面通知
+                            try:
+                                ps_script = '''
+[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null
+[Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom, ContentType = WindowsRuntime] | Out-Null
+$template = "<toast><visual><binding template=`"ToastText01`"><text id=`"1`">LMFP 试用提醒：试用节点剩余时间不足 10 分钟！</text></binding></visual></toast>"
+$xml = New-Object Windows.Data.Xml.Dom.XmlDocument
+$xml.LoadXml($template)
+$toast = New-Object Windows.UI.Notifications.ToastNotification $xml
+[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("LMFP").Show($toast)
+'''
+                                if platform.system() == "Windows":
+                                    subprocess.Popen(["powershell", "-Command", ps_script], 
+                                                     creationflags=subprocess.CREATE_NO_WINDOW)
+                            except Exception as e:
+                                self.log(f"发送系统通知失败: {e}")
+                                
+                        if remaining <= 0:
+                            self.log("⚠ 试用节点时间已耗尽！")
+                            self.trial_monitor_running = False
+                            self.stop_frp_services()
+                            
+                            def show_exhausted_warning():
+                                try:
+                                    if hasattr(self, 'pyside_window') and self.pyside_window:
+                                        from PySide6.QtWidgets import QMessageBox
+                                        QMessageBox.warning(self.pyside_window, "警告", "试用节点时间已耗尽，已断开连接。")
+                                    else:
+                                        messagebox.showwarning("警告", "试用节点时间已耗尽，已断开连接。")
+                                except Exception as e:
+                                    print(f"弹窗错误: {e}")
+
+                            if hasattr(self, 'pyside_window') and self.pyside_window and hasattr(self.pyside_window, 'signals'):
+                                self.pyside_window.signals.ui_callback_requested.emit(show_exhausted_warning)
+                            elif hasattr(self, 'root') and self.root:
+                                self.root.after(0, show_exhausted_warning)
+                            else:
+                                show_exhausted_warning()
+                            break
+                    else:
+                        fail_count += 1
+            except Exception as e:
+                # 记录网络错误或解析错误
+                fail_count += 1
+                self.log(f"心跳推送异常: {e}")
+                
+            if fail_count >= 2:
+                self.log("⚠ 连续两次心跳请求失败，正在断开高速节点连接...")
+                self.trial_monitor_running = False
+                self.stop_frp_services()
+                
+                def show_fail_warning():
+                    try:
+                        if hasattr(self, 'pyside_window') and self.pyside_window:
+                            from PySide6.QtWidgets import QMessageBox
+                            QMessageBox.warning(self.pyside_window, "警告", "连续两次向服务器发送心跳推送失败，已自动断开节点以防止异常。")
+                        else:
+                            messagebox.showwarning("警告", "连续两次向服务器发送心跳推送失败，已自动断开节点以防止异常。")
+                    except Exception as e:
+                        print(f"弹窗错误: {e}")
+                
+                if hasattr(self, 'pyside_window') and self.pyside_window and hasattr(self.pyside_window, 'signals'):
+                    self.pyside_window.signals.ui_callback_requested.emit(show_fail_warning)
+                elif hasattr(self, 'root') and self.root:
+                    self.root.after(0, show_fail_warning)
+                else:
+                    show_fail_warning()
+                break
+                
+            # 每 10 秒心跳一次
+            time.sleep(10)
+
     def run_frp_join(self):
         if not self.cloud_permission_granted:
             messagebox.showwarning("功能锁定", "云端许可验证失败，无法使用此功能")
@@ -10899,6 +10867,9 @@ remotePort = {remote_port}
         
         # 检查是否为白名单验证，如果是则获取额外的特殊节点
         verification_type = check_cloud_permission()
+        remaining_seconds = 1800
+        board_sn = getattr(self, 'board_sn', '未获取')
+
         if verification_type == 'whitelist':
             self.log("检测到白名单验证，正在获取特殊节点列表...")
             特殊_nodes = self.get_特殊_nodes()
@@ -10912,6 +10883,28 @@ remotePort = {remote_port}
                         self.log(f"✓ 添加特殊节点 #{特殊_node['node_id']}: {特殊_node['name']}")
             else:
                 self.log("⚠ 未能获取特殊节点列表")
+        else:
+            try:
+                url = f"https://lytapi.asia/vipd/api.php?id={board_sn}"
+                req = Request(url, headers={'User-Agent': f'LMFP/{lmfpvers}'})
+                with urlopen(req, timeout=3) as response:
+                    res_data = json.loads(response.read().decode('utf-8'))
+                    if res_data.get('success'):
+                        remaining_seconds = res_data.get('remaining_seconds', 0)
+            except Exception as e:
+                self.log(f"获取试用时间失败: {e}")
+                remaining_seconds = 0
+                
+            self.log("获取试用高速节点...")
+            特殊_nodes = self.get_特殊_nodes()
+            if 特殊_nodes:
+                existing_ids = {node['node_id'] for node in nodes}
+                for 特殊_node in 特殊_nodes:
+                    if 特殊_node['node_id'] not in existing_ids:
+                        特殊_node['is_trial_node'] = True
+                        特殊_node['remaining_seconds'] = remaining_seconds
+                        nodes.append(特殊_node)
+                        self.log(f"✓ 添加试用节点 #{特殊_node['node_id']}: {特殊_node['name']}")
         
         # 测试所有节点的延迟
         nodes_with_delay = self.test_nodes_delay(nodes)
@@ -10930,7 +10923,7 @@ remotePort = {remote_port}
             self.log(f"  {i+1}. #{node['node_id']} - {node['name']} - 延迟: {node['delay']}ms")
         
         # 弹出下拉列表让用户选择节点
-        selected_node = self.show_node_selection_dialog(nodes_with_delay, best_node)
+        selected_node = self.show_node_selection_dialog(nodes_with_delay, best_node, verification_type)
         
         if selected_node:
             self.log(f"✓ 选择节点: #{selected_node['node_id']} - {selected_node['name']}，延迟: {selected_node['delay']}ms")
@@ -10940,12 +10933,13 @@ remotePort = {remote_port}
             self.log(f"✓ 选择最佳节点: #{best_node['node_id']} - {best_node['name']}，延迟: {best_delay}ms")
             return best_node
 
-    def show_node_selection_dialog(self, nodes_with_delay, best_node):
+    def show_node_selection_dialog(self, nodes_with_delay, best_node, verification_type='whitelist'):
         """显示节点选择对话框，让用户从下拉列表中选择节点"""
         # 如果没有节点，直接返回
         if not nodes_with_delay:
             return None
             
+
         # 尝试使用 PySide6 现代化弹窗
         if hasattr(self, 'pyside_window') and self.pyside_window and hasattr(self.pyside_window, 'signals'):
             import threading
@@ -11008,14 +11002,19 @@ remotePort = {remote_port}
                     title_label.setFont(title_font)
                     title_label.setStyleSheet("color: #1976D2;")
                     layout.addWidget(title_label)
-                    
+
                     combo = QComboBox()
                     node_mapping = []
                     for i, node in enumerate(nodes_with_delay):
+                        display = f"#{node['node_id']} - {node['name']} - 延迟: {node['delay']}ms"
                         if node['node_id'] == best_node['node_id']:
-                            display = f"#{node['node_id']} - {node['name']} - 延迟: {node['delay']}ms (推荐)"
-                        else:
-                            display = f"#{node['node_id']} - {node['name']} - 延迟: {node['delay']}ms"
+                            display += " (推荐)"
+                        if node.get('is_trial_node'):
+                            rem = node.get('remaining_seconds', 0)
+                            if rem <= 0:
+                                display += " (试用已结束)"
+                            else:
+                                display += f" (赞助节点 剩余试用: {rem//60}分钟{rem%60}秒)"
                         combo.addItem(display)
                         node_mapping.append(node)
                         
@@ -11037,10 +11036,31 @@ remotePort = {remote_port}
                         QPushButton:pressed { background-color: #E0E0E0; }
                     """)
                     
-                    confirm_btn.clicked.connect(dialog.accept)
+                    def check_pyside_confirm():
+                        idx = combo.currentIndex()
+                        if idx >= 0 and idx < len(node_mapping):
+                            selected_n = node_mapping[idx]
+                            if selected_n.get('is_trial_node') and selected_n.get('remaining_seconds', 0) <= 0:
+                                from PySide6.QtWidgets import QMessageBox
+                                msg = QMessageBox(dialog)
+                                msg.setIcon(QMessageBox.Warning)
+                                msg.setWindowTitle("提示")
+                                msg.setText("试用时间已结束，若继续使用该节点需要赞助软件\n（其他非赞助专属节点不受影响）")
+                                btn_ok = msg.addButton("返回选择页面", QMessageBox.AcceptRole)
+                                btn_sponsor = msg.addButton("立即前往赞助", QMessageBox.ActionRole)
+                                msg.exec()
+                                if msg.clickedButton() == btn_sponsor:
+                                    import webbrowser
+                                    webbrowser.open("https://afdian.com/a/LYTIT")
+                                return
+                        dialog.accept()
+
+                    confirm_btn.clicked.connect(check_pyside_confirm)
                     cancel_btn.clicked.connect(dialog.reject)
                     
                     btn_layout.addStretch()
+                    
+
                     btn_layout.addWidget(confirm_btn)
                     btn_layout.addWidget(cancel_btn)
                     layout.addLayout(btn_layout)
@@ -11079,16 +11099,21 @@ remotePort = {remote_port}
         
         # 标题
         tk.Label(main_container, text="请选择要使用的FRP节点：", font=BW_FONTS["small"],
-                bg=BW_COLORS["card_bg"], fg=BW_COLORS["primary"]).pack(pady=10)
+                bg=BW_COLORS["card_bg"], fg=BW_COLORS["primary"]).pack(pady=5)
         
         # 创建下拉列表
         node_options = []
         for node in nodes_with_delay:
             # 在延迟最低的节点名后加上"（推荐）"
+            node_display = f"#{node['node_id']} - {node['name']} - 延迟: {node['delay']}ms"
             if node['node_id'] == best_node['node_id']:
-                node_display = f"#{node['node_id']} - {node['name']} - 延迟: {node['delay']}ms （推荐）"
-            else:
-                node_display = f"#{node['node_id']} - {node['name']} - 延迟: {node['delay']}ms"
+                node_display += " （默认）"
+            if node.get('is_trial_node'):
+                rem = node.get('remaining_seconds', 0)
+                if rem <= 0:
+                    node_display += " (试用已结束)"
+                else:
+                    node_display += f" (剩余试用: {rem//60}分钟{rem%60}秒)"
             node_options.append(node_display)
         
         # 如果没有节点，返回None
@@ -11125,6 +11150,35 @@ remotePort = {remote_port}
             # 找到对应的节点信息
             for node in nodes_with_delay:
                 if node['node_id'] == node_id:
+                    if node.get('is_trial_node') and node.get('remaining_seconds', 0) <= 0:
+                        def show_tk_sponsor_dialog():
+                            dlg = tk.Toplevel(selection_window)
+                            dlg.title("提示")
+                            dlg.geometry("380x160")
+                            dlg.transient(selection_window)
+                            dlg.grab_set()
+                            dlg.configure(bg=BW_COLORS["background"])
+                            
+                            tk.Label(dlg, text="试用时间已结束，若继续使用该节点需要赞助软件\n（https://afdian.com/a/LYTIT）", 
+                                     font=BW_FONTS["small"], bg=BW_COLORS["background"], fg=BW_COLORS["text"], pady=20).pack()
+                            
+                            btn_frame = tk.Frame(dlg, bg=BW_COLORS["background"])
+                            btn_frame.pack(pady=10)
+                            
+                            def on_sponsor():
+                                import webbrowser
+                                webbrowser.open("https://afdian.com/a/LYTIT")
+                                dlg.destroy()
+                                
+                            btn1 = tk.Button(btn_frame, text="立即前往赞助", command=on_sponsor, bg="#FF9800", fg="white", relief="flat", padx=15, pady=6)
+                            btn1.pack(side=tk.LEFT, padx=10)
+                            btn2 = tk.Button(btn_frame, text="确定", command=dlg.destroy, bg="#E0E0E0", fg="#333333", relief="flat", padx=15, pady=6)
+                            btn2.pack(side=tk.LEFT, padx=10)
+                            
+                            dlg.wait_window()
+                        
+                        show_tk_sponsor_dialog()
+                        return
                     result[0] = node
                     break
             
@@ -11139,6 +11193,8 @@ remotePort = {remote_port}
         
         cancel_btn = create_bw_button(button_frame, "取消", cancel_selection, "secondary", width=10)
         cancel_btn.pack(side=tk.LEFT, padx=5)
+        
+
         
         # 绑定回车和ESC键
         selection_window.bind('<Return>', lambda e: confirm_selection())
@@ -12042,6 +12098,7 @@ try:
         chat_login_success = Signal(str, str) # username, token
         chat_verify_requested = Signal(str, str) # email, password
         ui_callback_requested = Signal(object) # function callback
+        chat_log_emitted = Signal(str, bool) # message, is_error
 
     class CardWidget(QFrame):
         """卡片组件 (from pyside6_example.py)"""
@@ -12219,7 +12276,10 @@ try:
             sidebar_layout.addWidget(title_label)
             
             self.nav_list = QListWidget()
-            self.nav_list.addItems(["🔗 联机", "🌐 联机大厅", "💬 聊天室", "🛠️ 更多功能", "ℹ️ 关于软件"])
+            self.nav_list.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            self.nav_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            self.nav_list.setFixedHeight(260) # 足够容纳 6 个项目，避免被遮挡
+            self.nav_list.addItems(["🔗 联机", "🌐 联机大厅", "💬 聊天室", "☁️ MCS租服", "🛠️ 更多功能", "ℹ️ 关于软件"])
             self.nav_list.setStyleSheet("""
                 QListWidget {
                     border: none;
@@ -12324,6 +12384,8 @@ try:
             self.page_chat = self.create_chat_page()
             self.stacked_widget.addWidget(self.page_chat)
             
+            self.page_rental = self.create_rental_page()
+            self.stacked_widget.addWidget(self.page_rental)
             # 页面 4: 更多功能
             self.page_more = self.create_more_page()
             self.stacked_widget.addWidget(self.page_more)
@@ -12332,11 +12394,713 @@ try:
             self.page_about = self.create_about_page()
             self.stacked_widget.addWidget(self.page_about)
             
+            # 页面 6: 租赁服
+            
             right_container_layout.addWidget(self.stacked_widget)
             main_layout.addWidget(right_container)
             
             # 默认选中第一项
             self.nav_list.setCurrentRow(0)
+
+        def create_rental_page(self):
+            from PySide6.QtWidgets import (QScrollArea, QWidget, QVBoxLayout, QHBoxLayout, QMessageBox, 
+                QInputDialog, QDialog, QComboBox, QLineEdit, QDialogButtonBox, QLabel, QPushButton, QGridLayout)
+            from PySide6.QtCore import Qt, QTimer
+            import os, json, urllib.request, urllib.parse, webbrowser
+
+            page = QWidget()
+            layout = QVBoxLayout(page)
+            layout.setSpacing(20)
+            layout.setContentsMargins(20, 20, 20, 20)
+            
+            # 操作按钮区
+            action_layout = QHBoxLayout()
+            self.btn_add_server = ModernButton("添加服务器", "#1976D2")
+            self.btn_add_server.debounced_clicked.connect(self.on_add_server)
+            self.btn_buy_server = ModernButton("购买服务器", "#388E3C")
+            self.btn_buy_server.debounced_clicked.connect(self.on_buy_server)
+            action_layout.addWidget(self.btn_add_server)
+            action_layout.addWidget(self.btn_buy_server)
+            
+            from PySide6.QtWidgets import QCheckBox
+            self.chk_show_full_id = QCheckBox("显示完整服务器ID")
+            self.chk_show_full_id.setStyleSheet("font-size: 14px; color: #555; font-weight: bold;")
+            self.chk_show_full_id.stateChanged.connect(lambda: self.load_rental_servers())
+            action_layout.addWidget(self.chk_show_full_id)
+            
+            action_layout.addStretch()
+            
+            self.btn_refresh_rental = ModernButton("刷新服务器状态", "#757575")
+            self.btn_refresh_rental.debounced_clicked.connect(self.load_rental_servers)
+            action_layout.addWidget(self.btn_refresh_rental)
+            
+            layout.addLayout(action_layout)
+            
+            # 卡片流式列表区
+            self.rental_scroll = QScrollArea()
+            self.rental_scroll.setWidgetResizable(True)
+            self.rental_scroll.setStyleSheet("QScrollArea { border: none; background-color: transparent; }")
+            
+            self.rental_container = QWidget()
+            self.rental_container.setStyleSheet("background-color: transparent;")
+            self.rental_layout = QGridLayout(self.rental_container)
+            self.rental_layout.setSpacing(15)
+            self.rental_layout.setContentsMargins(0, 0, 0, 0)
+            self.rental_layout.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+            
+            self.rental_scroll.setWidget(self.rental_container)
+            layout.addWidget(self.rental_scroll)
+            
+            # 初始加载
+            QTimer.singleShot(500, self.load_rental_servers)
+            return page
+
+        def _ping_server_status(self, ip_str, status_label):
+            import threading
+            from PySide6.QtCore import QMetaObject, Qt, Q_ARG
+            def task():
+                try:
+                    global MCSTATUS_AVAILABLE
+                    if MCSTATUS_AVAILABLE and ip_str and ':' in ip_str:
+                        from mcstatus import JavaServer
+                        server = JavaServer.lookup(ip_str, timeout=3)
+                        status = server.status()
+                        status_text = f"在线（{status.players.online}/{status.players.max}）"
+                        status_color = "#4CAF50"
+                    elif ip_str and ':' in ip_str:
+                        status_text = "在线 (缺少 mcstatus)"
+                        status_color = "#4CAF50"
+                    else:
+                        status_text = "离线 (IP异常)"
+                        status_color = "#F44336"
+                except Exception:
+                    status_text = "离线"
+                    status_color = "#F44336"
+                try:
+                    QMetaObject.invokeMethod(status_label, "setText", Qt.QueuedConnection, Q_ARG(str, status_text))
+                    QMetaObject.invokeMethod(status_label, "setStyleSheet", Qt.QueuedConnection, Q_ARG(str, f"color: {status_color}; border: none;"))
+                except RuntimeError:
+                    pass
+            threading.Thread(target=task, daemon=True).start()
+
+        def _sync_server_info(self, sid, state, info_label):
+            import threading
+            from PySide6.QtCore import QMetaObject, Qt, Q_ARG, QSettings
+            import urllib.request, json, time
+            
+            def task():
+                # 2. 从服务器拉取最新信息（包括到期时间）
+                try:
+                    url = f"https://lytapi.asia/mcs/api.php?id={sid}"
+                    req = urllib.request.Request(url)
+                    with urllib.request.urlopen(req, timeout=5) as res:
+                        data = json.loads(res.read().decode('utf-8'))
+                        if 'error' not in data:
+                            # 更新本地注册表
+                            settings = QSettings("LMFP", "RentalServers")
+                            svd_data = {}
+                            try:
+                                svd_data = json.loads(settings.value("server_data", "{}"))
+                            except: pass
+                            svd_data[sid] = data
+                            settings.setValue("server_data", json.dumps(svd_data, ensure_ascii=False))
+                            
+                            # 重新生成 info_label 的 HTML
+                            ver_str = data.get('version', '未知')
+                            new_ip_str = data.get('ip', state['ip'])
+                            state['ip'] = new_ip_str
+                            expire_at = data.get('expire_at', 0)
+                            
+                            if expire_at:
+                                expire_date = time.strftime('%Y-%m-%d', time.localtime(expire_at))
+                                is_expired = time.time() > expire_at
+                                if is_expired:
+                                    expire_html = f"<span style='color:#F44336;font-weight:bold;'>已到期（{expire_date}）请续费！</span>"
+                                else:
+                                    expire_html = f"<span style='color:#4CAF50;'>到期: {expire_date}</span>"
+                            else:
+                                expire_html = "<span style='color:#9E9E9E;'>无到期信息</span>"
+                            
+                            new_text = f"<b>版本:</b> {ver_str}<br><b>IP:</b> {new_ip_str}<br><b>切勿泄露服务器ID</b><br><b>这会导致服务器控制权泄露</b><br>{expire_html}"
+                            QMetaObject.invokeMethod(info_label, "setText", Qt.QueuedConnection, Q_ARG(str, new_text))
+                except Exception:
+                    pass
+            
+            threading.Thread(target=task, daemon=True).start()
+
+        def _send_server_cmd(self, sid, cmd, btn=None):
+            from PySide6.QtWidgets import QMessageBox
+            from PySide6.QtCore import QTimer, QObject, Signal
+            import urllib.request, json, threading
+            
+            if btn:
+                btn.setEnabled(False)
+                original_text = btn.text()
+                btn.setText("执行中...")
+            
+            class WorkerSignals(QObject):
+                success = Signal(str)
+                error = Signal(str)
+            signals = WorkerSignals()
+            
+            def on_success(msg):
+                QMessageBox.information(self, "执行结果", msg)
+                self.load_rental_servers()
+                
+            def on_error(msg):
+                QMessageBox.warning(self, "错误", msg)
+                if btn:
+                    btn.setEnabled(True)
+                    btn.setText(original_text)
+                    
+            signals.success.connect(on_success)
+            signals.error.connect(on_error)
+            
+            def task():
+                url = f"https://lytapi.asia/mcs/api.php?action=cmd&id={sid}&cmd={cmd}"
+                try:
+                    req = urllib.request.Request(url)
+                    with urllib.request.urlopen(req, timeout=10) as res:
+                        data = res.read().decode('utf-8')
+                        if not data.strip():
+                            signals.error.emit("服务端接口返回了空数据，可能是中转 API 没能连接上物理机")
+                        else:
+                            signals.success.emit(f"指令发送结果:\n{data[:200]}")
+                except Exception as e:
+                    signals.error.emit(f"请求失败: {e}")
+            threading.Thread(target=task, daemon=True).start()
+
+        def _renew_server(self, sid):
+            from PySide6.QtWidgets import QInputDialog, QMessageBox
+            from PySide6.QtCore import QObject, Signal
+            import urllib.request, urllib.parse, json, threading
+            
+            token, ok = QInputDialog.getText(self, "续费服务器", f"请输入续费卡密（爱发电购买）")
+            if not ok or not token.strip():
+                return
+            token = token.strip()
+            
+            class WorkerSignals(QObject):
+                success = Signal(str)
+                error = Signal(str)
+            signals = WorkerSignals()
+            
+            def on_success(msg):
+                QMessageBox.information(self, "续费成功", msg)
+                self.load_rental_servers()
+                
+            def on_error(msg):
+                QMessageBox.warning(self, "续费失败", msg)
+                
+            signals.success.connect(on_success)
+            signals.error.connect(on_error)
+            
+            def task():
+                url = f"https://lytapi.asia/mcs/api.php?action=renew&id={urllib.parse.quote(sid)}&token={urllib.parse.quote(token)}"
+                try:
+                    req = urllib.request.Request(url)
+                    with urllib.request.urlopen(req, timeout=15) as res:
+                        data = json.loads(res.read().decode('utf-8'))
+                        if 'error' in data:
+                            signals.error.emit(data['error'])
+                        elif data.get('success'):
+                            from PySide6.QtCore import QSettings
+                            settings = QSettings("LMFP", "RentalServers")
+                            svd_data = {}
+                            try:
+                                svd_data = json.loads(settings.value("server_data", "{}"))
+                            except: pass
+                            if sid in svd_data and 'expire_at' in data:
+                                svd_data[sid]['expire_at'] = data['expire_at']
+                                settings.setValue("server_data", json.dumps(svd_data, ensure_ascii=False))
+                            signals.success.emit(f"续费成功！\n新到期时间: {data.get('expire_date', '未知')}")
+                        else:
+                            signals.error.emit("返回数据异常")
+                except Exception as e:
+                    signals.error.emit(f"请求失败: {e}")
+            
+            threading.Thread(target=task, daemon=True).start()
+
+        def _refresh_server_info(self, sid):
+            """从云端拉取最新的服务器信息并更新本地注册表"""
+            import urllib.request, json
+            from PySide6.QtCore import QSettings
+            try:
+                url = f"https://lytapi.asia/mcs/api.php?id={sid}"
+                req = urllib.request.Request(url)
+                with urllib.request.urlopen(req, timeout=5) as res:
+                    data = json.loads(res.read().decode('utf-8'))
+                    if 'error' not in data:
+                        settings = QSettings("LMFP", "RentalServers")
+                        svd_data = {}
+                        try:
+                            svd_data = json.loads(settings.value("server_data", "{}"))
+                        except: pass
+                        svd_data[sid] = data
+                        settings.setValue("server_data", json.dumps(svd_data, ensure_ascii=False))
+            except:
+                pass
+
+        def load_rental_servers(self):
+            import os, json
+            from PySide6.QtWidgets import QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushButton
+            from PySide6.QtCore import Qt, QTimer
+            from PySide6.QtGui import QFont, QCursor
+            
+            # 清理旧的定时器
+            if hasattr(self, 'rental_timers'):
+                for t in self.rental_timers:
+                    t.stop()
+                    t.deleteLater()
+            self.rental_timers = []
+            
+            # 清空旧卡片
+            while self.rental_layout.count():
+                child = self.rental_layout.takeAt(0)
+                if child.widget():
+                    child.widget().deleteLater()
+                    
+            from PySide6.QtCore import QSettings
+            settings = QSettings("LMFP", "RentalServers")
+            data_str = settings.value("server_data", "{}")
+            data = {}
+            try:
+                data = json.loads(data_str)
+            except: pass
+            
+            row, col = 0, 0
+            max_col = 2 # 每行最多3个卡片
+            
+            for sid, info in data.items():
+                card = QFrame()
+                card.setFixedSize(320, 210)
+                card.setStyleSheet("""
+                    QFrame {
+                        background-color: white;
+                        border-radius: 12px;
+                        border: 1px solid #E0E0E0;
+                    }
+                    QFrame:hover {
+                        border: 1px solid #1976D2;
+                        background-color: #FAFAFA;
+                    }
+                """)
+                card_layout = QVBoxLayout(card)
+                card_layout.setContentsMargins(15, 15, 15, 15)
+                
+                # 标题行
+                title_layout = QHBoxLayout()
+                display_sid = str(info.get('id', sid))
+                if hasattr(self, 'chk_show_full_id') and not self.chk_show_full_id.isChecked():
+                    if len(display_sid) > 4:
+                        display_sid = display_sid[:2] + "****" + display_sid[-2:]
+                    else:
+                        display_sid = "****"
+                
+                lbl_id = QLabel(f"<b>服务器 ID:</b> {display_sid}")
+                lbl_id.setFont(QFont("Microsoft YaHei", 12))
+                lbl_id.setStyleSheet("color: #212121; border: none;")
+                
+                lbl_status = QLabel("")
+                lbl_status.setFont(QFont("Microsoft YaHei", 10, QFont.Bold))
+                lbl_status.setStyleSheet("color: #FF9800; border: none;")
+                lbl_status.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                
+                title_layout.addWidget(lbl_id)
+                title_layout.addStretch()
+                title_layout.addWidget(lbl_status)
+                card_layout.addLayout(title_layout)
+                
+                # 分割线
+                line = QFrame()
+                line.setFrameShape(QFrame.HLine)
+                line.setStyleSheet("background-color: #EEEEEE; border: none; max-height: 1px;")
+                card_layout.addWidget(line)
+                
+                # 信息行
+                ver_str = info.get('version', '未知')
+                ip_str = info.get('ip', '未知')
+                state = {"ip": ip_str}
+                
+                # 到期时间显示
+                import time as _time
+                expire_at = info.get('expire_at', 0)
+                if expire_at:
+                    expire_date = _time.strftime('%Y-%m-%d', _time.localtime(expire_at))
+                    is_expired = _time.time() > expire_at
+                    if is_expired:
+                        expire_html = f"<span style='color:#F44336;font-weight:bold;'>已到期（{expire_date}）请续费！</span>"
+                    else:
+                        expire_html = f"<span style='color:#4CAF50;'>到期: {expire_date}</span>"
+                else:
+                    expire_html = "<span style='color:#9E9E9E;'>无到期信息</span>"
+                
+                lbl_info = QLabel(f"<b>版本:</b> {ver_str}<br><b>IP:</b> {ip_str}<br><b>切勿泄露服务器ID</b><br><b>这会导致服务器控制权泄露</b><br>{expire_html}")
+                lbl_info.setStyleSheet("color: #616161; border: none; line-height: 1.5;")
+                lbl_info.setFont(QFont("Microsoft YaHei", 10))
+                lbl_info.setWordWrap(True)
+                card_layout.addWidget(lbl_info)
+                
+                card_layout.addStretch()
+                
+                # 按钮行
+                btn_layout = QHBoxLayout()
+                btn_layout.setSpacing(6)
+                
+                btn_start = QPushButton("开机")
+                btn_start.setCursor(QCursor(Qt.PointingHandCursor))
+                btn_start.setStyleSheet("""
+                    QPushButton { background-color: #4CAF50; color: white; border-radius: 4px; padding: 6px; font-weight: bold; border: none; }
+                    QPushButton:hover { background-color: #43A047; }
+                    QPushButton:disabled { background-color: #9E9E9E; color: #E0E0E0; }
+                """)
+                btn_start.clicked.connect(lambda checked=False, s=sid, b=btn_start: self._send_server_cmd(s, "start", b))
+                
+                btn_stop = QPushButton("关机")
+                btn_stop.setCursor(QCursor(Qt.PointingHandCursor))
+                btn_stop.setStyleSheet("""
+                    QPushButton { background-color: #F44336; color: white; border-radius: 4px; padding: 6px; font-weight: bold; border: none; }
+                    QPushButton:hover { background-color: #E53935; }
+                    QPushButton:disabled { background-color: #9E9E9E; color: #E0E0E0; }
+                """)
+                btn_stop.clicked.connect(lambda checked=False, s=sid, b=btn_stop: self._send_server_cmd(s, "stop", b))
+                
+                btn_console = QPushButton("控制台")
+                btn_console.setCursor(QCursor(Qt.PointingHandCursor))
+                btn_console.setStyleSheet("""
+                    QPushButton { background-color: #FF9800; color: white; border-radius: 4px; padding: 6px; font-weight: bold; border: none; }
+                    QPushButton:hover { background-color: #FB8C00; }
+                """)
+                btn_console.clicked.connect(lambda checked=False, s=sid, st=state: self.open_specific_console(s, st['ip']))
+                
+                btn_renew = QPushButton("续费")
+                btn_renew.setCursor(QCursor(Qt.PointingHandCursor))
+                btn_renew.setStyleSheet("""
+                    QPushButton { background-color: #7B1FA2; color: white; border-radius: 4px; padding: 6px; font-weight: bold; border: none; }
+                    QPushButton:hover { background-color: #6A1B9A; }
+                """)
+                btn_renew.clicked.connect(lambda checked=False, s=sid: self._renew_server(s))
+                
+                btn_layout.addWidget(btn_start)
+                btn_layout.addWidget(btn_stop)
+                btn_layout.addWidget(btn_console)
+                btn_layout.addWidget(btn_renew)
+                card_layout.addLayout(btn_layout)
+                
+                self.rental_layout.addWidget(card, row, col)
+                
+                col += 1
+                if col >= max_col:
+                    col = 0
+                    row += 1
+                
+                # 触发状态检测和云端同步
+                self._sync_server_info(sid, state, lbl_info)
+                
+                # 启动每秒 ping 任务
+                timer = QTimer(card)
+                timer.timeout.connect(lambda s=state, l=lbl_status: self._ping_server_status(s['ip'], l))
+                timer.start(3000)
+                self.rental_timers.append(timer)
+                self._ping_server_status(state['ip'], lbl_status)
+
+        def on_add_server(self):
+            from PySide6.QtWidgets import QInputDialog, QMessageBox
+            from PySide6.QtCore import Qt, QObject, Signal
+            import os, json, urllib.request, threading
+            sid, ok = QInputDialog.getText(self, "添加服务器", "请输入服务器标识(ID):")
+            if not ok or not sid.strip(): return
+            sid = sid.strip()
+            
+            class WorkerSignals(QObject):
+                success = Signal(str)
+                error = Signal(str)
+            signals = WorkerSignals()
+            signals.success.connect(lambda msg: (QMessageBox.information(self, "成功", msg), self.load_rental_servers()))
+            signals.error.connect(lambda msg: QMessageBox.warning(self, "错误", msg))
+            
+            def task():
+                url = f"https://lytapi.asia/mcs/api.php?id={sid}"
+                try:
+                    req = urllib.request.Request(url)
+                    with urllib.request.urlopen(req, timeout=5) as res:
+                        data = json.loads(res.read().decode('utf-8'))
+                        if 'error' in data:
+                            signals.error.emit(data['error'])
+                            return
+                        
+                        from PySide6.QtCore import QSettings
+                        settings = QSettings("LMFP", "RentalServers")
+                        svd_data = {}
+                        try:
+                            svd_data = json.loads(settings.value("server_data", "{}"))
+                        except: pass
+                        
+                        svd_data[sid] = data
+                        settings.setValue("server_data", json.dumps(svd_data, ensure_ascii=False))
+                        
+                        signals.success.emit("服务器添加成功！")
+                except Exception as e:
+                    signals.error.emit(f"请求失败: {e}")
+            
+            threading.Thread(target=task, daemon=True).start()
+
+        def on_buy_server(self):
+            from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QComboBox, QLineEdit, QPushButton, QDialogButtonBox, QMessageBox
+            from PySide6.QtCore import Qt, QObject, Signal
+            import webbrowser, os, json, urllib.request, urllib.parse, threading
+            dialog = QDialog(self)
+            dialog.setWindowTitle("购买服务器")
+            dialog.setFixedSize(300, 250)
+            layout = QVBoxLayout(dialog)
+            
+            layout.addWidget(QLabel("选择游戏版本:"))
+            version_combo = QComboBox()
+            version_combo.addItems(["1.12.2", "1.16.5", "1.18.2", "1.20.1", "1.21.11", "26.1.2"])
+            layout.addWidget(version_combo)
+            
+            layout.addWidget(QLabel("输入开服卡密:"))
+            token_input = QLineEdit()
+            layout.addWidget(token_input)
+            
+            btn_buy_token = QPushButton("购买卡密 (点击打开网页)")
+            btn_buy_token.setStyleSheet("color: #1976D2; border: 1px solid #1976D2; border-radius: 4px; padding: 4px;")
+            btn_buy_token.setCursor(Qt.PointingHandCursor)
+            btn_buy_token.clicked.connect(lambda: webbrowser.open("https://afdian.com/a/LYTIT"))
+            layout.addWidget(btn_buy_token)
+            
+            btn_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+            btn_box.accepted.connect(dialog.accept)
+            btn_box.rejected.connect(dialog.reject)
+            layout.addWidget(btn_box)
+            
+            if dialog.exec() == QDialog.Accepted:
+                version = version_combo.currentText()
+                token = token_input.text().strip()
+                if not token:
+                    QMessageBox.warning(self, "错误", "卡密不能为空！")
+                    return
+                
+                QMessageBox.information(self, "提示", "点击确定/关闭本窗口 开始创建服务器")
+                
+                class WorkerSignals(QObject):
+                    success = Signal(str)
+                    error = Signal(str)
+                signals = WorkerSignals()
+                signals.success.connect(lambda msg: (QMessageBox.information(self, "成功", msg), self.load_rental_servers()))
+                signals.error.connect(lambda msg: QMessageBox.warning(self, "错误", msg))
+                
+                def task():
+                    url = f"https://lytapi.asia/mcs/api.php?ver={urllib.parse.quote(version)}&token={urllib.parse.quote(token)}"
+                    try:
+                        req = urllib.request.Request(url)
+                        with urllib.request.urlopen(req, timeout=60) as res:
+                            data = json.loads(res.read().decode('utf-8'))
+                            if 'error' in data:
+                                signals.error.emit(data['error'])
+                                return
+                            
+                            sid = data.get('id')
+                            if not sid:
+                                signals.error.emit("返回数据异常")
+                                return
+                                
+                            from PySide6.QtCore import QSettings
+                            settings = QSettings("LMFP", "RentalServers")
+                            svd_data = {}
+                            try:
+                                svd_data = json.loads(settings.value("server_data", "{}"))
+                            except: pass
+                            
+                            svd_data[sid] = data
+                            settings.setValue("server_data", json.dumps(svd_data, ensure_ascii=False))
+                            
+                            signals.success.emit("服务器购买并开启成功！")
+                    except Exception as e:
+                        signals.error.emit(f"请求失败: {e}")
+
+                threading.Thread(target=task, daemon=True).start()
+
+        def open_specific_console(self, sid, ip_str):
+            from PySide6.QtWidgets import QMessageBox, QDialog, QVBoxLayout, QHBoxLayout, QTextEdit, QLineEdit, QPushButton
+            from PySide6.QtCore import Qt, QTimer
+            import urllib.request, urllib.parse, threading
+            
+            if not ip_str or ':' not in ip_str:
+                QMessageBox.warning(self, "错误", "选中的服务器没有有效的IP地址信息")
+                return
+                
+            dialog = QDialog(self)
+            display_sid = str(sid)
+            if hasattr(self, 'chk_show_full_id') and not self.chk_show_full_id.isChecked():
+                if len(display_sid) > 4:
+                    display_sid = display_sid[:2] + "****" + display_sid[-2:]
+                else:
+                    display_sid = "****"
+            dialog.setWindowTitle(f"服务器控制台 - {display_sid}")
+            dialog.setFixedSize(850, 500)
+            main_layout = QHBoxLayout(dialog)
+            
+            left_layout = QVBoxLayout()
+            
+            log_text = QTextEdit()
+            log_text.setReadOnly(True)
+            log_text.setStyleSheet("background-color: #1e1e1e; color: #d4d4d4; font-family: Consolas, monospace;")
+            left_layout.addWidget(log_text)
+            
+            cmd_layout = QHBoxLayout()
+            cmd_input = QLineEdit()
+            cmd_input.setPlaceholderText("输入指令 (无需加/)，按回车发送")
+            cmd_input.setStyleSheet("padding: 5px; font-size: 14px;")
+            
+            btn_send = QPushButton("发送")
+            btn_send.setStyleSheet("padding: 5px 15px; background-color: #1976D2; color: white; border: none; border-radius: 4px;")
+            btn_send.setCursor(Qt.PointingHandCursor)
+            
+            cmd_layout.addWidget(cmd_input)
+            cmd_layout.addWidget(btn_send)
+            left_layout.addLayout(cmd_layout)
+            
+            right_layout = QVBoxLayout()
+            right_layout.setContentsMargins(10, 0, 0, 0)
+            
+            from PySide6.QtWidgets import QLabel
+            quick_lbl = QLabel("快捷指令")
+            quick_lbl.setStyleSheet("font-weight: bold; font-size: 14px; margin-bottom: 5px;")
+            right_layout.addWidget(quick_lbl)
+            
+            op_input = QLineEdit()
+            op_input.setPlaceholderText("输入玩家ID")
+            op_input.setStyleSheet("padding: 5px; border: 1px solid #ccc; border-radius: 4px;")
+            right_layout.addWidget(op_input)
+            
+            btn_op = QPushButton("给予管理员权限")
+            btn_op.setStyleSheet("""
+                QPushButton { padding: 6px; background-color: #FF9800; color: white; font-weight: bold; border: none; border-radius: 4px; }
+                QPushButton:hover { background-color: #F57C00; }
+            """)
+            btn_op.setCursor(Qt.PointingHandCursor)
+            
+            btn_deop = QPushButton("撤销管理员权限")
+            btn_deop.setStyleSheet("""
+                QPushButton { padding: 6px; background-color: #F44336; color: white; font-weight: bold; border: none; border-radius: 4px; }
+                QPushButton:hover { background-color: #D32F2F; }
+            """)
+            btn_deop.setCursor(Qt.PointingHandCursor)
+            
+            btn_online_true = QPushButton("开启正版验证")
+            btn_online_true.setStyleSheet("""
+                QPushButton { padding: 6px; background-color: #4CAF50; color: white; font-weight: bold; border: none; border-radius: 4px; margin-top: 15px; }
+                QPushButton:hover { background-color: #388E3C; }
+            """)
+            btn_online_true.setCursor(Qt.PointingHandCursor)
+            
+            btn_online_false = QPushButton("关闭正版验证")
+            btn_online_false.setStyleSheet("""
+                QPushButton { padding: 6px; background-color: #E91E63; color: white; font-weight: bold; border: none; border-radius: 4px; }
+                QPushButton:hover { background-color: #C2185B; }
+            """)
+            btn_online_false.setCursor(Qt.PointingHandCursor)
+            
+            right_layout.addWidget(btn_op)
+            right_layout.addWidget(btn_deop)
+            right_layout.addWidget(btn_online_true)
+            right_layout.addWidget(btn_online_false)
+            right_layout.addStretch()
+            
+            main_layout.addLayout(left_layout, stretch=3)
+            main_layout.addLayout(right_layout, stretch=1)
+            
+            from PySide6.QtCore import Qt, QTimer, QObject, Signal
+            class LogSignals(QObject):
+                updated = Signal(str)
+                show_msg = Signal(str, str)
+            log_signals = LogSignals()
+            
+            def show_message_box(title, text):
+                QMessageBox.information(dialog, title, text)
+            log_signals.show_msg.connect(show_message_box)
+            
+            def update_ui(data):
+                scrollbar = log_text.verticalScrollBar()
+                is_at_bottom = scrollbar.value() == scrollbar.maximum()
+                log_text.setPlainText(data)
+                if is_at_bottom:
+                    scrollbar.setValue(scrollbar.maximum())
+            log_signals.updated.connect(update_ui)
+            
+            def fetch_log():
+                def task():
+                    url = f"https://lytapi.asia/mcs/api.php?action=log&id={sid}"
+                    try:
+                        req = urllib.request.Request(url)
+                        with urllib.request.urlopen(req, timeout=3) as res:
+                            data = res.read().decode('utf-8')
+                            log_signals.updated.emit(data)
+                    except Exception as e:
+                        pass
+                threading.Thread(target=task, daemon=True).start()
+            
+            def on_send():
+                cmd = cmd_input.text().strip()
+                if not cmd: return
+                cmd_input.clear()
+                
+                def send_task():
+                    url = f"https://lytapi.asia/mcs/api.php?action=cmd&id={sid}&cmd={urllib.parse.quote(cmd)}"
+                    try:
+                        req = urllib.request.Request(url)
+                        urllib.request.urlopen(req, timeout=5)
+                    except:
+                        pass
+                
+                threading.Thread(target=send_task, daemon=True).start()
+                
+            btn_send.clicked.connect(on_send)
+            cmd_input.returnPressed.connect(on_send)
+            
+            def send_quick_cmd(cmd_prefix):
+                player = op_input.text().strip()
+                if not player:
+                    QMessageBox.warning(dialog, "提示", "请先输入玩家ID")
+                    return
+                cmd = f"{cmd_prefix} {player}"
+                def send_task():
+                    url = f"https://lytapi.asia/mcs/api.php?action=cmd&id={sid}&cmd={urllib.parse.quote(cmd)}"
+                    try:
+                        req = urllib.request.Request(url)
+                        urllib.request.urlopen(req, timeout=5)
+                    except:
+                        pass
+                threading.Thread(target=send_task, daemon=True).start()
+                op_input.clear()
+                
+            btn_op.clicked.connect(lambda: send_quick_cmd("op"))
+            btn_deop.clicked.connect(lambda: send_quick_cmd("deop"))
+            
+            def set_online_mode(mode):
+                def task():
+                    url = f"https://lytapi.asia/mcs/api.php?action=online_mode&id={sid}&mode={mode}"
+                    try:
+                        req = urllib.request.Request(url)
+                        with urllib.request.urlopen(req, timeout=5) as res:
+                            data = res.read().decode('utf-8')
+                            log_signals.show_msg.emit("系统提示", data)
+                    except Exception as e:
+                        log_signals.show_msg.emit("系统提示", f"请求失败: {e}")
+                threading.Thread(target=task, daemon=True).start()
+                
+            btn_online_true.clicked.connect(lambda: set_online_mode("true"))
+            btn_online_false.clicked.connect(lambda: set_online_mode("false"))
+            
+            fetch_log()
+            
+            timer = QTimer(dialog)
+            timer.timeout.connect(fetch_log)
+            timer.start(2000)
+            
+            dialog.exec()
+            timer.stop()
 
         def create_connect_page(self):
             page = QWidget()
@@ -12522,6 +13286,7 @@ try:
             self.signals.chat_status_updated.connect(self.update_chat_status)
             self.signals.chat_login_success.connect(self.on_chat_login_success)
             self.signals.chat_verify_requested.connect(self.show_chat_verify)
+            self.signals.chat_log_emitted.connect(self.append_chat_log)
             self.signals.ui_callback_requested.connect(lambda f: f())
             self.ui_locked = False
             
@@ -13050,7 +13815,7 @@ try:
             
             # 右侧：在线用户
             online_container = QVBoxLayout()
-            online_header = QLabel("在线用户")
+            online_header = QLabel("在线用户（双击@提及）")
             online_header.setStyleSheet("font-weight: bold; color: #546E7A; padding: 5px;")
             online_container.addWidget(online_header)
             
@@ -13571,6 +14336,15 @@ try:
                     self.send_notification(f"@{self.chat_user} 提醒", f"{sender} 在聊天中提到了你: {content[:50]}...")
                     self.chat_last_notification_time = current_time
 
+        def append_chat_log(self, message, is_error=False):
+            time_str = datetime.now().strftime("%H:%M:%S")
+            color = "#F44336" if is_error else "#4CAF50"
+            formatted = f'<span style="color: #9e9e9e;">[{time_str}]</span> '
+            formatted += f'<span style="color: {color}; font-weight: bold;">[系统消息] {message}</span>'
+            
+            self.chat_view.append(formatted)
+            self.chat_view.verticalScrollBar().setValue(self.chat_view.verticalScrollBar().maximum())
+
         def update_chat_online_list(self, users):
             self.online_list.clear()
             for user in users:
@@ -13621,7 +14395,7 @@ try:
             self.btn_send_chat.setEnabled(True)
             
             self.update_chat_status(f"已登录: {username}", "#4CAF50")
-            self.signals.log_emitted.emit(f"✓ 聊天室登录成功: {username}")
+            self.signals.chat_log_emitted.emit(f"✓ 聊天室登录成功: {username}", False)
             
             # 开启轮询
             self.chat_refresh_timer.start(2000)
@@ -13648,7 +14422,7 @@ try:
             if os.path.exists("user_session.json"):
                 try: os.remove("user_session.json")
                 except: pass
-            self.signals.log_emitted.emit("✓ 已退出聊天室")
+            self.signals.chat_log_emitted.emit("✓ 已退出聊天室", False)
 
         def send_chat_message(self):
             content = self.chat_input.text().strip()
@@ -13659,7 +14433,7 @@ try:
                 url = f"{self.chat_api_base}/send_message.php"
                 resp = self.chat_http_request(url, "POST", {"token": self.chat_token, "message": content})
                 if not resp or not resp.get('success'):
-                    self.signals.log_emitted.emit(f"✗ 消息发送失败: {resp.get('message', '未知错误')}")
+                    self.signals.chat_log_emitted.emit(f"✗ 消息发送失败: {resp.get('message', '未知错误')}", True)
             
             threading.Thread(target=send, daemon=True).start()
 
@@ -13846,7 +14620,7 @@ try:
                     
                     def on_finish():
                         if resp and resp.get('success'):
-                            self.signals.log_emitted.emit("✓ 注册成功！请前往邮箱查收验证码。")
+                            self.signals.chat_log_emitted.emit("✓ 注册成功！请前往邮箱查收验证码。", False)
                             dialog.accept()
                             self.signals.chat_verify_requested.emit(email, password)
                         else:
@@ -13886,7 +14660,7 @@ try:
             title.setStyleSheet("font-size: 24px; color: #FF9800; font-weight: bold; margin-bottom: 5px;")
             layout.addWidget(title)
             
-            label = QLabel(f"验证码已发送至：\n<b>{email}</b>")
+            label = QLabel(f"验证码已发送至：\n{email}")
             label.setWordWrap(True)
             label.setAlignment(Qt.AlignCenter)
             layout.addWidget(label)
@@ -13919,7 +14693,7 @@ try:
                     
                     def on_finish():
                         if resp and resp.get('success'):
-                            self.signals.log_emitted.emit("✓ 邮箱验证成功，正在登录...")
+                            self.signals.chat_log_emitted.emit("✓ 邮箱验证成功，正在登录...", False)
                             url_login = f"{self.chat_api_base}/login.php"
                             resp_login = self.chat_http_request(url_login, "POST", {"email": email, "password": password})
                             if resp_login and resp_login.get('success'):
