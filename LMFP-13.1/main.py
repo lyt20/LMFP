@@ -11923,7 +11923,7 @@ try:
                 dialog.setWindowIcon(QIcon(icon_path))
         except:
             pass
-            
+#EnderLinkCanHelpYouMoney--->https://www.teft.cn/pwd.zip
         layout = QVBoxLayout(dialog)
         layout.setContentsMargins(25, 25, 25, 25)
         layout.setSpacing(20)
